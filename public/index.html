@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone Number Verification</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --panel: #111827;
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --primary: #2563eb;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --border: #1f2937;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .container {
+            max-width: 560px;
+            margin: 48px auto;
+            padding: 24px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        h1 {
+            margin: 0 0 16px 0;
+            font-size: 24px;
+        }
+
+        h2 {
+            margin: 24px 0 8px 0;
+            font-size: 18px;
+            color: var(--muted);
+        }
+
+        form {
+            display: grid;
+            gap: 12px;
+        }
+
+        label {
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        input {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: #0b1220;
+            color: var(--text);
+        }
+
+        button {
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: var(--primary);
+            color: #fff;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .message-container {
+            margin-top: 16px;
+            min-height: 22px;
+            font-size: 14px;
+        }
+
+        #message {
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        #timer {
+            margin-left: 8px;
+            font-size: 14px;
+            color: var(--muted);
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        .success {
+            color: var(--success);
+        }
+
+        .error {
+            color: var(--danger);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Phone Number Verification</h1>
+
+        <form id="request-form">
+            <h2>Step 1: Request OTP</h2>
+            <label for="name">Name</label>
+            <input id="name" name="name" type="text" placeholder="Your name" required>
+
+            <label for="mobile">Mobile</label>
+            <input id="mobile" name="mobile" type="tel" placeholder="e.g. 5512345671" required>
+
+            <button type="submit">Send OTP</button>
+        </form>
+
+        <form id="verify-form" class="hidden">
+            <h2>Step 2: Verify OTP & Register</h2>
+            <label for="otp">OTP</label>
+            <input id="otp" name="otp" type="text" inputmode="numeric" placeholder="Enter OTP" required>
+            <button type="submit">Verify & Register</button>
+        </form>
+
+        <div class="message-container">
+            <span id="message" role="status"></span>
+            <span id="timer" aria-live="polite"></span>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const requestForm = document.getElementById('request-form');
+            const verifyForm = document.getElementById('verify-form');
+            const messageEl = document.getElementById('message');
+            const timerEl = document.getElementById('timer');
+
+            let jwtToken = null;
+            let timerIntervalId = null;
+            const TIMER_KEY = 'otpTimerStartAt';
+            const DURATION_MS = 2 * 60 * 1000; // 2 minutes
+
+            // Set message with optional type
+            function setMessage(text, type) {
+                messageEl.className = type || '';
+                messageEl.textContent = text || '';
+            }
+
+            // Handle HTTP errors
+            async function handleHttpError(resp) {
+                let detail = '';
+                try {
+                    const data = await resp.json();
+                    detail = (data && (data.message || JSON.stringify(data))) || '';
+                } catch (e) {
+                    // If JSON parsing fails, use status text
+                }
+                throw new Error(detail || ('HTTP ' + resp.status));
+            }
+
+            // Start countdown timer
+            function startTimer() {
+                const startTime = Date.now();
+                localStorage.setItem(TIMER_KEY, startTime.toString());
+                updateTimer();
+
+                timerIntervalId = setInterval(() => {
+                    updateTimer();
+                }, 1000);
+            }
+
+            // Update timer display
+            function updateTimer() {
+                const startTime = localStorage.getItem(TIMER_KEY);
+                if (!startTime) {
+                    clearTimer();
+                    return;
+                }
+
+                const elapsed = Date.now() - parseInt(startTime);
+                const remaining = DURATION_MS - elapsed;
+
+                if (remaining <= 0) {
+                    clearTimer();
+                    timerEl.textContent = 'OTP expired. Please request a new one.';
+                    return;
+                }
+
+                const minutes = Math.floor(remaining / 60000);
+                const seconds = Math.floor((remaining % 60000) / 1000);
+                timerEl.textContent = `Expires in ${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }
+
+            // Clear timer
+            function clearTimer() {
+                if (timerIntervalId) {
+                    clearInterval(timerIntervalId);
+                    timerIntervalId = null;
+                }
+                localStorage.removeItem(TIMER_KEY);
+                timerEl.textContent = '';
+            }
+
+            // Check if there's an existing timer on page load
+            function checkExistingTimer() {
+                const startTime = localStorage.getItem(TIMER_KEY);
+                if (startTime) {
+                    const elapsed = Date.now() - parseInt(startTime);
+                    if (elapsed < DURATION_MS) {
+                        // Timer is still valid, show verify form and continue countdown
+                        requestForm.classList.add('hidden');
+                        verifyForm.classList.remove('hidden');
+                        updateTimer();
+                        timerIntervalId = setInterval(() => {
+                            updateTimer();
+                        }, 1000);
+                    } else {
+                        // Timer expired, clear it and reset to first page
+                        clearTimer();
+                        requestForm.classList.add('hidden');
+                        verifyForm.classList.remove('hidden');
+                    }
+                }
+            }
+
+            // Handle Step 1: Send OTP
+            requestForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                setMessage('Sending OTP...');
+
+                const formData = new FormData(requestForm);
+                const name = (formData.get('name') || '').toString().trim();
+                const mobile = (formData.get('mobile') || '').toString().trim();
+
+                if (!name || !mobile) {
+                    setMessage('Name and mobile are required', 'error');
+                    return;
+                }
+
+                try {
+                    const resp = await fetch('http://localhost:3200/verify-mobile', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, mobile })
+                    });
+
+                    if (!resp.ok) await handleHttpError(resp);
+
+                    const data = await resp.json();
+                    console.log(data);
+
+                    jwtToken = data.token;
+                    setMessage(data.message || 'OTP sent. Check your phone.', 'success');
+
+                    // Switch to verification form and start timer
+                    requestForm.classList.add('hidden');
+                    verifyForm.classList.remove('hidden');
+                    startTimer();
+
+                } catch (err) {
+                    setMessage(err.message || 'Failed to send OTP', 'error');
+                }
+            });
+
+            // Handle Step 2: Verify OTP
+            verifyForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                setMessage('Verifying OTP...');
+
+                const formData = new FormData(verifyForm);
+                const otp = (formData.get('otp') || '').toString().trim();
+
+                if (!otp) {
+                    setMessage('OTP is required', 'error');
+                    return;
+                }
+
+                try {
+                    const resp = await fetch('http://localhost:3200/register', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': jwtToken ? ('Bearer ' + jwtToken) : ''
+                        },
+                        body: JSON.stringify({ otp })
+                    });
+
+                    if (!resp.ok) await handleHttpError(resp);
+
+                    const data = await resp.json();
+                    console.log(data);
+
+                    setMessage(data.message || 'Registered successfully', 'success');
+                    clearTimer(); // Clear timer on successful registration
+                    verifyForm.reset();
+                    requestForm.reset();
+                    // Switch to verification form and start timer
+                    requestForm.classList.remove('hidden');
+                    verifyForm.classList.add('hidden');
+
+                } catch (err) {
+                    setMessage(err.message || 'Failed to verify OTP', 'error');
+                }
+            });
+
+            // Check for existing timer on page load
+            checkExistingTimer();
+
+        })();
+    </script>
+</body>
+
+</html>
