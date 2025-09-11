@@ -12,6 +12,9 @@ exports.verifyMobileNumber = async (req, res, next) => {
         const sanitizedMobile = mongoSanitize(mobile);
         const sanitizedName = mongoSanitize(name);
 
+        if (!sanitizedName || !sanitizedMobile) {
+            return res.status(400).json({ message: 'Name and mobile are required' });
+        }
 
         if (validators.validateMobile(sanitizedMobile)) {
             const existing = await User.findOne({ mobile: sanitizedMobile });
@@ -20,8 +23,7 @@ exports.verifyMobileNumber = async (req, res, next) => {
             }
             await helpers.sendOtp(sanitizedMobile)
             const token = jwtAuth.generateToken(sanitizedMobile, sanitizedName)
-            res.status(200).json({ message: 'OTP sent successfully . Please verify within 2 minutes.', token });
-
+            res.status(200).json({ message: 'OTP sent successfully. Please verify within 2 minutes.', token });
         }
     } catch (error) {
         next(error)

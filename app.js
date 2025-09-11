@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const db = require('./models/database')
 const route = require('./routes/routing')
+const errorLogger = require('./utilities/errorLogger')
 dotenv.config({ quiet: true });
 const cors = require('cors')
 
@@ -12,6 +13,7 @@ app.use(express.static('public'))
 app.use(express.json())
 app.use(express.urlencoded({extended:true}))
 app.use('/', route)
+app.use(errorLogger)
 const PORT = process.env.PORT || 3200;
 
 
